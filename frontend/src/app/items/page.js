@@ -189,33 +189,53 @@ export default function ProductsPage() {
     }
   }, [router]);
 
+  // ✅ Listen for cart updates from other components
+  useEffect(() => {
+    const handleCartUpdate = () => {
+      const updatedCart = JSON.parse(localStorage.getItem("cart") || "[]");
+      setCartItems(updatedCart);
+    };
+    
+    window.addEventListener("cart-updated", handleCartUpdate);
+    
+    return () => {
+      window.removeEventListener("cart-updated", handleCartUpdate);
+    };
+  }, []);
+
   // ✅ Save cart to localStorage when it changes
   useEffect(() => {
     localStorage.setItem("cart", JSON.stringify(cartItems));
-    // 🔔 Notify other components about cart updates
-    window.dispatchEvent(new CustomEvent("cart-updated"));
   }, [cartItems]);
 
   useEffect(() => {
     localStorage.setItem("wishlist", JSON.stringify(wishlist));
   }, [wishlist]);
 
-  // ✅ Add to Cart (simplified like the example)
+  // ✅ FIXED: Add to Cart - Always read from localStorage first
   const addToCart = (product) => {
-    const existingItem = cartItems.find(item => item.id === product.id);
+    // Always read the latest cart from localStorage to ensure we have the most current state
+    const currentCart = JSON.parse(localStorage.getItem("cart") || "[]");
+    const existingItemIndex = currentCart.findIndex(item => item.id === product.id);
     let updatedCart;
-
-    if (existingItem) {
-      updatedCart = cartItems.map(item => 
-        item.id === product.id 
-          ? { ...item, quantity: item.quantity + 1 } 
-          : item
-      );
+    
+    if (existingItemIndex !== -1) {
+      // Item exists, update quantity
+      updatedCart = [...currentCart];
+      updatedCart[existingItemIndex] = {
+        ...updatedCart[existingItemIndex],
+        quantity: updatedCart[existingItemIndex].quantity + 1
+      };
     } else {
-      updatedCart = [...cartItems, { ...product, quantity: 1 }];
+      // Item doesn't exist, add new item
+      updatedCart = [...currentCart, { ...product, quantity: 1 }];
     }
-
+    
     setCartItems(updatedCart);
+    localStorage.setItem("cart", JSON.stringify(updatedCart));
+    
+    // Notify other components
+    window.dispatchEvent(new CustomEvent("cart-updated"));
     
     // Show notification
     setCartNotification(true);
@@ -223,8 +243,11 @@ export default function ProductsPage() {
   };
 
   const removeFromCart = (productId) => {
-    const updatedCart = cartItems.filter(item => item.id !== productId);
+    const currentCart = JSON.parse(localStorage.getItem("cart") || "[]");
+    const updatedCart = currentCart.filter(item => item.id !== productId);
     setCartItems(updatedCart);
+    localStorage.setItem("cart", JSON.stringify(updatedCart));
+    window.dispatchEvent(new CustomEvent("cart-updated"));
   };
 
   const updateQuantity = (productId, newQuantity) => {
@@ -233,13 +256,16 @@ export default function ProductsPage() {
       return;
     }
     
-    const updatedCart = cartItems.map(item => 
+    const currentCart = JSON.parse(localStorage.getItem("cart") || "[]");
+    const updatedCart = currentCart.map(item => 
       item.id === productId 
         ? { ...item, quantity: newQuantity } 
         : item
     );
     
     setCartItems(updatedCart);
+    localStorage.setItem("cart", JSON.stringify(updatedCart));
+    window.dispatchEvent(new CustomEvent("cart-updated"));
   };
 
   const toggleWishlist = (product) => {
@@ -274,6 +300,7 @@ export default function ProductsPage() {
           break;
         case 4:
           filtered = filtered.filter(p => p.price >= 200);
+          break;
         default:
           break;
       }
@@ -544,108 +571,137 @@ export default function ProductsPage() {
             className="grid gap-8 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
           >
             <AnimatePresence>
-              {filteredProducts.map((product) => (
-                <motion.div
-                  key={product.id}
-                  variants={itemVariants}
-                  whileHover={hoverEffect}
-                  className="bg-white rounded-2xl shadow-lg overflow-hidden transition-all duration-300 border border-gray-100"
-                >
-                  <div className="relative overflow-hidden">
-                    <motion.img
-                      whileHover={{ scale: 1.1 }}
-                      src={product.image}
-                      alt={product.name}
-                      className="w-full h-60 object-cover"
-                    />
-                    <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-t from-black/30 to-transparent"></div>
-                    
-                    {product.originalPrice && (
-                      <motion.span 
-                        initial={{ scale: 0 }}
-                        animate={{ scale: 1 }}
-                        className="absolute top-3 left-3 bg-gradient-to-r from-coral-500 to-coral-600 text-white text-xs px-3 py-1 rounded-full font-bold shadow-md"
-                      >
-                        {Math.round((1 - product.price / product.originalPrice) * 100)}% OFF
-                      </motion.span>
-                    )}
-                    
-                    <motion.button 
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
-                      onClick={() => toggleWishlist(product)}
-                      className="absolute top-3 right-3 p-2 rounded-full bg-white/90 backdrop-blur-sm shadow-md hover:bg-coral-50 transition-colors"
-                      type="button"
-                    >
-                      <Heart 
-                        className={`w-5 h-5 ${wishlist.some(item => item.id === product.id) 
-                          ? 'fill-coral-500 text-coral-500' 
-                          : 'text-gray-600'}`} 
+              {filteredProducts.map((product) => {
+                const cartItem = cartItems.find(item => item.id === product.id);
+                const quantity = cartItem ? cartItem.quantity : 0;
+                
+                return (
+                  <motion.div
+                    key={product.id}
+                    variants={itemVariants}
+                    whileHover={hoverEffect}
+                    className="bg-white rounded-2xl shadow-lg overflow-hidden transition-all duration-300 border border-gray-100"
+                  >
+                    <div className="relative overflow-hidden">
+                      <motion.img
+                        whileHover={{ scale: 1.1 }}
+                        src={product.image}
+                        alt={product.name}
+                        className="w-full h-60 object-cover"
                       />
-                    </motion.button>
-                    
-                    {product.featured && (
-                      <motion.span 
-                        initial={{ x: -20, opacity: 0 }}
-                        animate={{ x: 0, opacity: 1 }}
-                        transition={{ delay: 0.5 }}
-                        className="absolute bottom-3 left-3 bg-gradient-to-r from-teal-500 to-teal-600 text-white text-xs px-2 py-1 rounded-md font-medium"
-                      >
-                        Featured
-                      </motion.span>
-                    )}
-                  </div>
-                  
-                  <div className="p-5">
-                    <h2 className="text-lg font-bold text-gray-800 mb-2 line-clamp-1">
-                      {product.name}
-                    </h2>
-                    
-                    <div className="flex items-center mb-3">
-                      {[...Array(5)].map((_, i) => (
-                        <Star 
-                          key={i} 
-                          className={`w-4 h-4 ${i < Math.floor(product.rating) 
-                            ? 'fill-amber-400 text-amber-400' 
-                            : 'text-gray-300'}`} 
-                        />
-                      ))}
-                      <span className="text-xs text-gray-500 ml-2">({product.reviewCount})</span>
-                    </div>
-                    
-                    {/* Color options */}
-                    <div className="flex space-x-2 mb-4">
-                      {product.colors.map((color, index) => (
-                        <div 
-                          key={index}
-                          className="w-4 h-4 rounded-full border border-gray-200"
-                          style={{ backgroundColor: color }}
-                        ></div>
-                      ))}
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xl font-bold text-gray-900">${product.price}</p>
-                        {product.originalPrice && (
-                          <p className="text-sm text-gray-500 line-through">${product.originalPrice}</p>
-                        )}
-                      </div>
+                      <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-t from-black/30 to-transparent"></div>
+                      
+                      {product.originalPrice && (
+                        <motion.span 
+                          initial={{ scale: 0 }}
+                          animate={{ scale: 1 }}
+                          className="absolute top-3 left-3 bg-gradient-to-r from-coral-500 to-coral-600 text-white text-xs px-3 py-1 rounded-full font-bold shadow-md"
+                        >
+                          {Math.round((1 - product.price / product.originalPrice) * 100)}% OFF
+                        </motion.span>
+                      )}
                       
                       <motion.button 
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => addToCart(product)}
-                        className="flex items-center gap-2 bg-gradient-to-r from-teal-500 to-purple-500 text-white py-2 px-4 rounded-xl hover:shadow-md transition-all"
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => toggleWishlist(product)}
+                        className="absolute top-3 right-3 p-2 rounded-full bg-white/90 backdrop-blur-sm shadow-md hover:bg-coral-50 transition-colors"
                         type="button"
                       >
-                        <ShoppingCart className="w-4 h-4" />
-                        <span className="text-sm font-medium">Add to Cart</span>
+                        <Heart 
+                          className={`w-5 h-5 ${wishlist.some(item => item.id === product.id) 
+                            ? 'fill-coral-500 text-coral-500' 
+                            : 'text-gray-600'}`} 
+                        />
                       </motion.button>
+                      
+                      {product.featured && (
+                        <motion.span 
+                          initial={{ x: -20, opacity: 0 }}
+                          animate={{ x: 0, opacity: 1 }}
+                          transition={{ delay: 0.5 }}
+                          className="absolute bottom-3 left-3 bg-gradient-to-r from-teal-500 to-teal-600 text-white text-xs px-2 py-1 rounded-md font-medium"
+                        >
+                          Featured
+                        </motion.span>
+                      )}
                     </div>
-                  </div>
-                </motion.div>
-              ))}
+                    
+                    <div className="p-5">
+                      <h2 className="text-lg font-bold text-gray-800 mb-2 line-clamp-1">
+                        {product.name}
+                      </h2>
+                      
+                      <div className="flex items-center mb-3">
+                        {[...Array(5)].map((_, i) => (
+                          <Star 
+                            key={i} 
+                            className={`w-4 h-4 ${i < Math.floor(product.rating) 
+                              ? 'fill-amber-400 text-amber-400' 
+                              : 'text-gray-300'}`} 
+                          />
+                        ))}
+                        <span className="text-xs text-gray-500 ml-2">({product.reviewCount})</span>
+                      </div>
+                      
+                      {/* Color options */}
+                      <div className="flex space-x-2 mb-4">
+                        {product.colors.map((color, index) => (
+                          <div 
+                            key={index}
+                            className="w-4 h-4 rounded-full border border-gray-200"
+                            style={{ backgroundColor: color }}
+                          ></div>
+                        ))}
+                      </div>
+                      
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xl font-bold text-gray-900">${product.price}</p>
+                          {product.originalPrice && (
+                            <p className="text-sm text-gray-500 line-through">${product.originalPrice}</p>
+                          )}
+                        </div>
+                        
+                        {quantity > 0 ? (
+                          <div className="flex items-center space-x-2">
+                            <motion.button 
+                              whileHover={{ scale: 1.1 }}
+                              whileTap={{ scale: 0.9 }}
+                              onClick={() => updateQuantity(product.id, quantity - 1)}
+                              className="p-1 rounded-full bg-gray-100 hover:bg-gray-200"
+                              type="button"
+                            >
+                              <Minus className="w-4 h-4" />
+                            </motion.button>
+                            <span className="text-lg font-medium">{quantity}</span>
+                            <motion.button 
+                              whileHover={{ scale: 1.1 }}
+                              whileTap={{ scale: 0.9 }}
+                              onClick={() => updateQuantity(product.id, quantity + 1)}
+                              className="p-1 rounded-full bg-gray-100 hover:bg-gray-200"
+                              type="button"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </motion.button>
+                          </div>
+                        ) : (
+                          <motion.button 
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => addToCart(product)}
+                            className="flex items-center gap-2 bg-gradient-to-r from-teal-500 to-purple-500 text-white py-2 px-4 rounded-xl hover:shadow-md transition-all"
+                            type="button"
+                          >
+                            <ShoppingCart className="w-4 h-4" />
+                            <span className="text-sm font-medium">Add to Cart</span>
+                          </motion.button>
+                        )}
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
             </AnimatePresence>
           </motion.div>
         )}

@@ -41,13 +41,16 @@ export default function CartPage() {
     }
   }, [router]);
 
+  // ✅ FIXED: Always read from localStorage first before updating
   const updateQuantity = (productId, newQuantity) => {
     if (newQuantity < 1) {
       removeFromCart(productId);
       return;
     }
     
-    const updatedCart = cartItems.map(item => 
+    // Always read the latest cart from localStorage to ensure we have the most current state
+    const currentCart = JSON.parse(localStorage.getItem("cart") || "[]");
+    const updatedCart = currentCart.map(item => 
       item.id === productId 
         ? { ...item, quantity: newQuantity } 
         : item
@@ -60,8 +63,11 @@ export default function CartPage() {
     window.dispatchEvent(new CustomEvent("cart-updated"));
   };
 
+  // ✅ FIXED: Always read from localStorage first before removing
   const removeFromCart = (productId) => {
-    const updatedCart = cartItems.filter(item => item.id !== productId);
+    // Always read the latest cart from localStorage to ensure we have the most current state
+    const currentCart = JSON.parse(localStorage.getItem("cart") || "[]");
+    const updatedCart = currentCart.filter(item => item.id !== productId);
     setCartItems(updatedCart);
     localStorage.setItem("cart", JSON.stringify(updatedCart));
     
